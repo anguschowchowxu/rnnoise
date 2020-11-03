@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import datetime
 import keras
 from keras.models import Sequential
 from keras.models import Model
@@ -20,6 +21,8 @@ import h5py
 from keras.constraints import Constraint
 from keras import backend as K
 import numpy as np
+
+from keras.callbacks import TensorBoard
 
 #import tensorflow as tf
 #from keras.backend.tensorflow_backend import set_session
@@ -74,35 +77,50 @@ denoise_output = Dense(22, activation='sigmoid', name='denoise_output', kernel_c
 
 model = Model(inputs=main_input, outputs=[denoise_output, vad_output])
 
+tbCallBack = TensorBoard(log_dir='./logs/'+datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+
 model.compile(loss=[mycost, my_crossentropy],
               metrics=[msse],
               optimizer='adam', loss_weights=[10, 0.5])
 
 
-batch_size = 32
+batch_size = 32*8
 
 print('Loading data...')
-with h5py.File('training.h5', 'r') as hf:
-    all_data = hf['data'][:]
+with h5py.File('data/data.h5', 'r') as hf:
+    train_data = hf['train'][:]
+    test_data = hf['test'][:]
 print('done.')
 
 window_size = 2000
 
-nb_sequences = len(all_data)//window_size
+nb_sequences = len(train_data)//window_size
+nb_sequences_test = len(test_data)//window_size
 print(nb_sequences, ' sequences')
-x_train = all_data[:nb_sequences*window_size, :42]
+
+x_train = train_data[:nb_sequences*window_size, :42]
 x_train = np.reshape(x_train, (nb_sequences, window_size, 42))
+x_test = test_data[:nb_sequences_test*window_size, :42]
+x_test = np.reshape(x_test, (nb_sequences_test, window_size, 42))
 
-y_train = np.copy(all_data[:nb_sequences*window_size, 42:64])
+y_train = np.copy(train_data[:nb_sequences*window_size, 42:64])
 y_train = np.reshape(y_train, (nb_sequences, window_size, 22))
+y_test = np.copy(test_data[:nb_sequences_test*window_size, 42:64])
+y_test = np.reshape(y_test, (nb_sequences_test, window_size, 22))
 
-noise_train = np.copy(all_data[:nb_sequences*window_size, 64:86])
+noise_train = np.copy(train_data[:nb_sequences*window_size, 64:86])
 noise_train = np.reshape(noise_train, (nb_sequences, window_size, 22))
+noise_test = np.copy(test_data[:nb_sequences_test*window_size, 64:86])
+noise_test = np.reshape(noise_test, (nb_sequences_test, window_size, 22))
 
-vad_train = np.copy(all_data[:nb_sequences*window_size, 86:87])
+vad_train = np.copy(train_data[:nb_sequences*window_size, 86:87])
 vad_train = np.reshape(vad_train, (nb_sequences, window_size, 1))
+vad_test = np.copy(test_data[:nb_sequences_test*window_size, 86:87])
+vad_test = np.reshape(vad_test, (nb_sequences_test, window_size, 1))
 
-all_data = 0;
+
+train_data = 0;
+test_data = 0
 #x_train = x_train.astype('float32')
 #y_train = y_train.astype('float32')
 
@@ -112,5 +130,11 @@ print('Train...')
 model.fit(x_train, [y_train, vad_train],
           batch_size=batch_size,
           epochs=120,
-          validation_split=0.1)
+          validation_split=0.20,
+        callbacks=[tbCallBack])
 model.save("weights.hdf5")
+
+test_scores = model.evaluate(x_test, [y_test, vad_test], verbose=2)
+print(test_scores)
+print("Test loss:", test_scores[0])
+# print("Test accuracy:", test_scores[1])

@@ -521,7 +521,7 @@ int main(int argc, char **argv) {
   int vad_cnt=0;
   int gain_change_count=0;
   float speech_gain = 1, noise_gain = 1;
-  FILE *f1, *f2;
+  FILE *f1, *f2, *f3, *f4;
   int maxCount;
   DenoiseState *st;
   DenoiseState *noise_state;
@@ -529,13 +529,15 @@ int main(int argc, char **argv) {
   st = rnnoise_create(NULL);
   noise_state = rnnoise_create(NULL);
   noisy = rnnoise_create(NULL);
-  if (argc!=4) {
-    fprintf(stderr, "usage: %s <speech> <noise> <count>\n", argv[0]);
+  if (argc!=5 || argc!=6) {
+    fprintf(stderr, "usage: %s <speech> <noise> <count> <feature_path> <noisy_path(optional)>\n", argv[0]);
     return 1;
   }
   f1 = fopen(argv[1], "r");
   f2 = fopen(argv[2], "r");
   maxCount = atoi(argv[3]);
+  f3 = fopen(argv[4], "a+b");
+  if (argc==6) f4 = fopen(argv[5], "w");
   for(i=0;i<150;i++) {
     short tmp[FRAME_SIZE];
     fread(tmp, sizeof(short), FRAME_SIZE, f2);
@@ -595,7 +597,11 @@ int main(int argc, char **argv) {
     biquad(x, mem_resp_x, x, b_sig, a_sig, FRAME_SIZE);
     biquad(n, mem_hp_n, n, b_hp, a_hp, FRAME_SIZE);
     biquad(n, mem_resp_n, n, b_noise, a_noise, FRAME_SIZE);
-    for (i=0;i<FRAME_SIZE;i++) xn[i] = x[i] + n[i];
+    for (i=0;i<FRAME_SIZE;i++) {
+      xn[i] = x[i] + n[i];
+    }
+    // generate noisy wav file
+    if (argc==6) fwrite(xn, sizeof(short), FRAME_SIZE, f4);
     if (E > 1e9f) {
       vad_cnt=0;
     } else if (E > 1e8f) {
@@ -627,15 +633,17 @@ int main(int argc, char **argv) {
     }
     count++;
 #if 1
-    fwrite(features, sizeof(float), NB_FEATURES, stdout);
-    fwrite(g, sizeof(float), NB_BANDS, stdout);
-    fwrite(Ln, sizeof(float), NB_BANDS, stdout);
-    fwrite(&vad, sizeof(float), 1, stdout);
+    fwrite(features, sizeof(float), NB_FEATURES, f3);
+    fwrite(g, sizeof(float), NB_BANDS, f3);
+    fwrite(Ln, sizeof(float), NB_BANDS, f3);
+    fwrite(&vad, sizeof(float), 1, f3);
 #endif
   }
-  fprintf(stderr, "matrix size: %d x %d\n", count, NB_FEATURES + 2*NB_BANDS + 1);
+  // fprintf(stderr, "matrix size: %d x %d\n", count, NB_FEATURES + 2*NB_BANDS + 1);
   fclose(f1);
   fclose(f2);
+  fclose(f3);
+  if (argc!=6) fclose(f4);
   return 0;
 }
 
